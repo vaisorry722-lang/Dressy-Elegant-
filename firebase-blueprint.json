@@ -1,0 +1,234 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user profile, language preference, PIN lock status, and active company pointer.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "phone": { "type": "string" },
+        "preferredLanguage": { "type": "string", "enum": ["bn", "en"] },
+        "pinEnabled": { "type": "boolean" },
+        "activeCompanyId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["userId", "displayName", "email", "preferredLanguage", "pinEnabled", "createdAt", "updatedAt"]
+    },
+    "Company": {
+      "title": "Company",
+      "description": "Multi-tenant business workspace for Bangladesh garments, burqa, abaya, tailoring, wholesale, or retail.",
+      "type": "object",
+      "properties": {
+        "companyCode": { "type": "string" },
+        "name": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "category": {
+          "type": "string",
+          "enum": [
+            "GARMENTS_FACTORY",
+            "BURQA_MANUFACTURING",
+            "ABAYA_BUSINESS",
+            "CLOTHING_COMPANY",
+            "TAILORING",
+            "WHOLESALE",
+            "RETAIL",
+            "OTHER_SME"
+          ]
+        },
+        "country": { "type": "string" },
+        "currency": { "type": "string" },
+        "timezone": { "type": "string" },
+        "description": { "type": "string" },
+        "logoTag": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "subscriptionTier": { "type": "string", "enum": ["FREE", "PREMIUM"] },
+        "subscriptionPlan": { "type": "string", "enum": ["FREE", "MONTHLY", "QUARTERLY", "YEARLY"] },
+        "subscriptionStatus": { "type": "string", "enum": ["ACTIVE", "PENDING_VERIFICATION", "EXPIRED"] },
+        "paymentNumber": { "type": "string" },
+        "employeeCount": { "type": "integer" },
+        "karigorCount": { "type": "integer" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "companyCode", "name", "ownerId", "ownerName", "phone", "email", "address",
+        "category", "country", "currency", "timezone", "memberUids",
+        "subscriptionTier", "subscriptionPlan", "subscriptionStatus", "paymentNumber",
+        "employeeCount", "karigorCount", "createdBy", "createdAt", "updatedAt"
+      ]
+    },
+    "CompanyMember": {
+      "title": "CompanyMember",
+      "description": "Tenant-scoped member, staff, or karigor record with RBAC role.",
+      "type": "object",
+      "properties": {
+        "companyId": { "type": "string" },
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": {
+          "type": "string",
+          "enum": [
+            "COMPANY_OWNER",
+            "COMPANY_ADMIN",
+            "MANAGER",
+            "ACCOUNTANT",
+            "EMPLOYEE",
+            "PRODUCTION_MANAGER",
+            "INVENTORY_MANAGER",
+            "SALES_MANAGER",
+            "KARIGOR",
+            "VIEWER"
+          ]
+        },
+        "staffType": { "type": "string", "enum": ["OWNER", "STAFF", "KARIGOR"] },
+        "status": { "type": "string", "enum": ["ACTIVE", "INVITED", "SUSPENDED"] },
+        "memberUids": { "type": "array" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["companyId", "userId", "displayName", "role", "staffType", "status", "memberUids", "createdBy", "createdAt", "updatedAt"]
+    },
+    "FinancialTransaction": {
+      "title": "FinancialTransaction",
+      "description": "Company-scoped accounting ledger entry in BDT.",
+      "type": "object",
+      "properties": {
+        "companyId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "entryType": {
+          "type": "string",
+          "enum": ["INCOME", "EXPENSE", "CASH_IN", "CASH_OUT", "BANK_DEPOSIT", "BANK_WITHDRAW", "CUSTOMER_DUE", "SUPPLIER_DUE"]
+        },
+        "category": { "type": "string" },
+        "title": { "type": "string" },
+        "partyName": { "type": "string" },
+        "amountBdt": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["CASH", "BANK", "BKASH", "NAGAD", "DUE"] },
+        "notes": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["companyId", "memberUids", "entryType", "category", "title", "amountBdt", "paymentMethod", "createdBy", "createdAt", "updatedAt"]
+    },
+    "ProductionOrder": {
+      "title": "ProductionOrder",
+      "description": "Company-scoped garment, burqa, or abaya production batch.",
+      "type": "object",
+      "properties": {
+        "companyId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "batchCode": { "type": "string" },
+        "productName": { "type": "string" },
+        "productType": { "type": "string", "enum": ["BURQA", "ABAYA", "GARMENTS", "TAILORING", "OTHER"] },
+        "targetUnits": { "type": "integer" },
+        "completedUnits": { "type": "integer" },
+        "assignedKarigors": { "type": "integer" },
+        "status": { "type": "string", "enum": ["PLANNED", "IN_PROGRESS", "COMPLETED"] },
+        "dueLabel": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["companyId", "memberUids", "batchCode", "productName", "productType", "targetUnits", "completedUnits", "assignedKarigors", "status", "createdBy", "createdAt", "updatedAt"]
+    },
+    "TenantNotification": {
+      "title": "TenantNotification",
+      "description": "Company-scoped operational notification.",
+      "type": "object",
+      "properties": {
+        "companyId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "category": { "type": "string" },
+        "readFlag": { "type": "boolean" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["companyId", "memberUids", "title", "message", "category", "readFlag", "createdBy", "createdAt", "updatedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable tenant audit log entry.",
+      "type": "object",
+      "properties": {
+        "companyId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "actorUid": { "type": "string" },
+        "actorName": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["companyId", "memberUids", "actorUid", "actorName", "action", "details", "createdBy", "createdAt"]
+    },
+    "PaymentRequest": {
+      "title": "PaymentRequest",
+      "description": "Subscription payment submission awaiting server-side verification.",
+      "type": "object",
+      "properties": {
+        "companyId": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "plan": { "type": "string", "enum": ["MONTHLY", "QUARTERLY", "YEARLY"] },
+        "amountBdt": { "type": "number" },
+        "paymentNumber": { "type": "string" },
+        "senderAccount": { "type": "string" },
+        "transactionRef": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING_VERIFICATION"] },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["companyId", "memberUids", "plan", "amountBdt", "paymentNumber", "senderAccount", "transactionRef", "status", "createdBy", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Owner-isolated user profile and preferences."
+    },
+    "/companies/{companyId}": {
+      "schema": { "$ref": "#/entities/Company" },
+      "description": "Multi-tenant company root documents."
+    },
+    "/companies/{companyId}/members/{memberUid}": {
+      "schema": { "$ref": "#/entities/CompanyMember" },
+      "description": "Company members, roles, and karigor roster."
+    },
+    "/companies/{companyId}/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/FinancialTransaction" },
+      "description": "Tenant accounting transactions in BDT."
+    },
+    "/companies/{companyId}/production_orders/{orderId}": {
+      "schema": { "$ref": "#/entities/ProductionOrder" },
+      "description": "Tenant garments and burqa/abaya production batches."
+    },
+    "/companies/{companyId}/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/TenantNotification" },
+      "description": "Tenant alerts and notifications."
+    },
+    "/companies/{companyId}/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Immutable tenant audit trail."
+    },
+    "/companies/{companyId}/payment_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/PaymentRequest" },
+      "description": "Subscription upgrade verification requests."
+    }
+  }
+}

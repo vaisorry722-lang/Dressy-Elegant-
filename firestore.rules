@@ -1,0 +1,434 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isBoundedStringList(lst, minLen, maxLen) {
+      return lst is list &&
+             lst.size() >= minLen &&
+             lst.size() <= maxLen &&
+             (lst.size() == 0 || (lst[0] is string && lst[0].size() <= 128));
+    }
+
+    function isCompanyMember(companyId) {
+      return isSignedIn() &&
+             exists(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)).data.status == 'ACTIVE';
+    }
+
+    function memberRole(companyId) {
+      return get(/databases/$(database)/documents/companies/$(companyId)/members/$(request.auth.uid)).data.role;
+    }
+
+    function isCompanyOwner(companyId) {
+      return isCompanyMember(companyId) && memberRole(companyId) == 'COMPANY_OWNER';
+    }
+
+    function isCompanyAdminOrOwner(companyId) {
+      return isCompanyMember(companyId) &&
+             memberRole(companyId) in ['COMPANY_OWNER', 'COMPANY_ADMIN'];
+    }
+
+    function hasFinanceAccess(companyId) {
+      return isCompanyMember(companyId) &&
+             memberRole(companyId) in ['COMPANY_OWNER', 'COMPANY_ADMIN', 'MANAGER', 'ACCOUNTANT'];
+    }
+
+    function hasProductionAccess(companyId) {
+      return isCompanyMember(companyId) &&
+             memberRole(companyId) in ['COMPANY_OWNER', 'COMPANY_ADMIN', 'MANAGER', 'PRODUCTION_MANAGER'];
+    }
+
+    // 3. Entity Validators
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             data.email is string && data.email.size() <= 120 &&
+             (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 500)) &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() <= 30)) &&
+             data.preferredLanguage in ['bn', 'en'] &&
+             data.pinEnabled is bool &&
+             (!('activeCompanyId' in data) || (data.activeCompanyId is string && data.activeCompanyId.size() <= 128)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCompany(data) {
+      return data.companyCode is string && data.companyCode.size() >= 4 && data.companyCode.size() <= 24 &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+             data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+             data.ownerName is string && data.ownerName.size() >= 2 && data.ownerName.size() <= 80 &&
+             data.phone is string && data.phone.size() >= 5 && data.phone.size() <= 30 &&
+             data.email is string && data.email.size() >= 3 && data.email.size() <= 120 &&
+             data.address is string && data.address.size() >= 2 && data.address.size() <= 250 &&
+             data.category in ['GARMENTS_FACTORY', 'BURQA_MANUFACTURING', 'ABAYA_BUSINESS', 'CLOTHING_COMPANY', 'TAILORING', 'WHOLESALE', 'RETAIL', 'OTHER_SME'] &&
+             data.country is string && data.country.size() >= 2 && data.country.size() <= 60 &&
+             data.currency is string && data.currency.size() >= 2 && data.currency.size() <= 10 &&
+             data.timezone is string && data.timezone.size() >= 2 && data.timezone.size() <= 50 &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 400)) &&
+             (!('logoTag' in data) || (data.logoTag is string && data.logoTag.size() <= 100)) &&
+             isBoundedStringList(data.memberUids, 1, 50) &&
+             data.subscriptionTier in ['FREE', 'PREMIUM'] &&
+             data.subscriptionPlan in ['FREE', 'MONTHLY', 'QUARTERLY', 'YEARLY'] &&
+             data.subscriptionStatus in ['ACTIVE', 'PENDING_VERIFICATION', 'EXPIRED'] &&
+             data.paymentNumber is string && data.paymentNumber.size() >= 6 && data.paymentNumber.size() <= 30 &&
+             data.employeeCount is int && data.employeeCount >= 0 && data.employeeCount <= 100000 &&
+             data.karigorCount is int && data.karigorCount >= 0 && data.karigorCount <= 100000 &&
+             data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidCompanyMember(data, companyId, memberUid) {
+      return data.companyId == companyId &&
+             data.userId == memberUid &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 120)) &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() <= 30)) &&
+             // SUPER_ADMIN can NEVER be granted via client writes
+             data.role in ['COMPANY_OWNER', 'COMPANY_ADMIN', 'MANAGER', 'ACCOUNTANT', 'EMPLOYEE', 'PRODUCTION_MANAGER', 'INVENTORY_MANAGER', 'SALES_MANAGER', 'KARIGOR', 'VIEWER'] &&
+             data.staffType in ['OWNER', 'STAFF', 'KARIGOR'] &&
+             data.status in ['ACTIVE', 'INVITED', 'SUSPENDED'] &&
+             isBoundedStringList(data.memberUids, 1, 50) &&
+             data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidTransaction(data, companyId) {
+      return data.companyId == companyId &&
+             isBoundedStringList(data.memberUids, 1, 50) &&
+             data.entryType in ['INCOME', 'EXPENSE', 'CASH_IN', 'CASH_OUT', 'BANK_DEPOSIT', 'BANK_WITHDRAW', 'CUSTOMER_DUE', 'SUPPLIER_DUE'] &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             (!('partyName' in data) || (data.partyName is string && data.partyName.size() <= 100)) &&
+             data.amountBdt is number && data.amountBdt > 0 && data.amountBdt <= 1000000000 &&
+             data.paymentMethod in ['CASH', 'BANK', 'BKASH', 'NAGAD', 'DUE'] &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 300)) &&
+             data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidProductionOrder(data, companyId) {
+      return data.companyId == companyId &&
+             isBoundedStringList(data.memberUids, 1, 50) &&
+             data.batchCode is string && data.batchCode.size() >= 2 && data.batchCode.size() <= 30 &&
+             data.productName is string && data.productName.size() >= 1 && data.productName.size() <= 120 &&
+             data.productType in ['BURQA', 'ABAYA', 'GARMENTS', 'TAILORING', 'OTHER'] &&
+             data.targetUnits is int && data.targetUnits >= 1 && data.targetUnits <= 1000000 &&
+             data.completedUnits is int && data.completedUnits >= 0 && data.completedUnits <= 1000000 &&
+             data.assignedKarigors is int && data.assignedKarigors >= 0 && data.assignedKarigors <= 10000 &&
+             data.status in ['PLANNED', 'IN_PROGRESS', 'COMPLETED'] &&
+             (!('dueLabel' in data) || (data.dueLabel is string && data.dueLabel.size() <= 40)) &&
+             data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidNotification(data, companyId) {
+      return data.companyId == companyId &&
+             isBoundedStringList(data.memberUids, 1, 50) &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+             data.message is string && data.message.size() >= 1 && data.message.size() <= 300 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 40 &&
+             data.readFlag is bool &&
+             data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidAuditLog(data, companyId) {
+      return data.companyId == companyId &&
+             isBoundedStringList(data.memberUids, 1, 50) &&
+             data.actorUid is string && data.actorUid.size() >= 1 && data.actorUid.size() <= 128 &&
+             data.actorName is string && data.actorName.size() >= 1 && data.actorName.size() <= 80 &&
+             data.action is string && data.action.size() >= 1 && data.action.size() <= 60 &&
+             data.details is string && data.details.size() >= 1 && data.details.size() <= 300 &&
+             data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+             isValidTimestamp(data.createdAt);
+    }
+
+    function isValidPaymentRequest(data, companyId) {
+      return data.companyId == companyId &&
+             isBoundedStringList(data.memberUids, 1, 50) &&
+             data.plan in ['MONTHLY', 'QUARTERLY', 'YEARLY'] &&
+             data.amountBdt is number && data.amountBdt > 0 && data.amountBdt <= 1000000 &&
+             data.paymentNumber == '301620556052' &&
+             data.senderAccount is string && data.senderAccount.size() >= 4 && data.senderAccount.size() <= 40 &&
+             data.transactionRef is string && data.transactionRef.size() >= 3 && data.transactionRef.size() <= 60 &&
+             data.status == 'PENDING_VERIFICATION' &&
+             data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // 4. Collection Rules
+
+    // User Profiles (strictly owner-isolated PII)
+    match /users/{userId} {
+      allow list: if isSignedIn() && request.auth.uid == userId;
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'email', 'preferredLanguage', 'pinEnabled', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'photoUrl', 'phone', 'preferredLanguage', 'pinEnabled', 'activeCompanyId', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoUrl', 'phone', 'preferredLanguage', 'pinEnabled', 'activeCompanyId', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+    }
+
+    // Companies (Multi-tenant root)
+    match /companies/{companyId} {
+      // Client queries MUST include .whereArrayContains("memberUids", uid)
+      allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+      allow get: if isSignedIn() && isValidId(companyId) && (request.auth.uid in existing().memberUids || isCompanyMember(companyId));
+
+      allow create: if isSignedIn() &&
+                       isValidId(companyId) &&
+                       incoming().ownerId == request.auth.uid &&
+                       incoming().createdBy == request.auth.uid &&
+                       incoming().memberUids.size() == 1 &&
+                       incoming().memberUids[0] == request.auth.uid &&
+                       // Client cannot self-activate PREMIUM subscription
+                       incoming().subscriptionTier == 'FREE' &&
+                       incoming().subscriptionPlan == 'FREE' &&
+                       incoming().subscriptionStatus == 'ACTIVE' &&
+                       incoming().paymentNumber == '301620556052' &&
+                       incoming().keys().hasAll(['companyCode', 'name', 'ownerId', 'ownerName', 'phone', 'email', 'address', 'category', 'country', 'currency', 'timezone', 'memberUids', 'subscriptionTier', 'subscriptionPlan', 'subscriptionStatus', 'paymentNumber', 'employeeCount', 'karigorCount', 'createdBy', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['companyCode', 'name', 'ownerId', 'ownerName', 'phone', 'email', 'address', 'category', 'country', 'currency', 'timezone', 'description', 'logoTag', 'memberUids', 'subscriptionTier', 'subscriptionPlan', 'subscriptionStatus', 'paymentNumber', 'employeeCount', 'karigorCount', 'createdBy', 'createdAt', 'updatedAt']) &&
+                       isValidCompany(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(companyId) &&
+                       isValidCompany(incoming()) &&
+                       incoming().ownerId == existing().ownerId &&
+                       incoming().companyCode == existing().companyCode &&
+                       incoming().createdBy == existing().createdBy &&
+                       incoming().createdAt == existing().createdAt &&
+                       // Subscription tier/plan/status cannot be promoted by client writes
+                       incoming().subscriptionTier == existing().subscriptionTier &&
+                       incoming().subscriptionPlan == existing().subscriptionPlan &&
+                       incoming().subscriptionStatus == existing().subscriptionStatus &&
+                       isCompanyAdminOrOwner(companyId) &&
+                       (
+                         // Action: Update company profile details
+                         incoming().diff(existing()).affectedKeys().hasOnly(['name', 'ownerName', 'phone', 'email', 'address', 'category', 'description', 'logoTag', 'updatedAt']) ||
+                         // Action: Sync headcount / membership list
+                         incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'employeeCount', 'karigorCount', 'updatedAt'])
+                       );
+
+      allow delete: if isSignedIn() && isValidId(companyId) && existing().ownerId == request.auth.uid;
+
+      // Company Members & Karigors
+      match /members/{memberUid} {
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+        allow get: if isSignedIn() && isValidId(companyId) && isValidId(memberUid) && isCompanyMember(companyId);
+
+        allow create: if isSignedIn() &&
+                         isValidId(companyId) &&
+                         isValidId(memberUid) &&
+                         incoming().createdBy == request.auth.uid &&
+                         incoming().keys().hasAll(['companyId', 'userId', 'displayName', 'role', 'staffType', 'status', 'memberUids', 'createdBy', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['companyId', 'userId', 'displayName', 'email', 'phone', 'role', 'staffType', 'status', 'memberUids', 'createdBy', 'createdAt', 'updatedAt']) &&
+                         isValidCompanyMember(incoming(), companyId, memberUid) &&
+                         (
+                           // Case 1: Owner bootstrapping own COMPANY_OWNER record atomically with company creation
+                           (
+                             memberUid == request.auth.uid &&
+                             incoming().role == 'COMPANY_OWNER' &&
+                             incoming().staffType == 'OWNER' &&
+                             incoming().status == 'ACTIVE' &&
+                             getAfter(/databases/$(database)/documents/companies/$(companyId)).data.ownerId == request.auth.uid
+                           ) ||
+                           // Case 2: Existing Owner/Admin adding staff or karigor (cannot create COMPANY_OWNER)
+                           (
+                             incoming().role != 'COMPANY_OWNER' &&
+                             isCompanyAdminOrOwner(companyId)
+                           )
+                         );
+
+        allow update: if isSignedIn() &&
+                         isValidId(companyId) &&
+                         isValidId(memberUid) &&
+                         isValidCompanyMember(incoming(), companyId, memberUid) &&
+                         incoming().companyId == existing().companyId &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdBy == existing().createdBy &&
+                         incoming().createdAt == existing().createdAt &&
+                         isCompanyAdminOrOwner(companyId) &&
+                         // Cannot demote the primary company owner
+                         (existing().role != 'COMPANY_OWNER' || incoming().role == 'COMPANY_OWNER') &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'phone', 'role', 'staffType', 'status', 'memberUids', 'updatedAt']);
+
+        allow delete: if isSignedIn() &&
+                         isValidId(companyId) &&
+                         isValidId(memberUid) &&
+                         isCompanyAdminOrOwner(companyId) &&
+                         existing().role != 'COMPANY_OWNER';
+      }
+
+      // Financial Transactions (Restricted to finance roles on get/write)
+      match /transactions/{transactionId} {
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+        allow get: if isSignedIn() && isValidId(companyId) && isValidId(transactionId) && hasFinanceAccess(companyId);
+
+        allow create: if isSignedIn() &&
+                         isValidId(companyId) &&
+                         isValidId(transactionId) &&
+                         incoming().createdBy == request.auth.uid &&
+                         incoming().keys().hasAll(['companyId', 'memberUids', 'entryType', 'category', 'title', 'amountBdt', 'paymentMethod', 'createdBy', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['companyId', 'memberUids', 'entryType', 'category', 'title', 'partyName', 'amountBdt', 'paymentMethod', 'notes', 'createdBy', 'createdAt', 'updatedAt']) &&
+                         isValidTransaction(incoming(), companyId) &&
+                         hasFinanceAccess(companyId);
+
+        allow update: if isSignedIn() &&
+                         isValidId(companyId) &&
+                         isValidId(transactionId) &&
+                         isValidTransaction(incoming(), companyId) &&
+                         incoming().companyId == existing().companyId &&
+                         incoming().createdBy == existing().createdBy &&
+                         incoming().createdAt == existing().createdAt &&
+                         hasFinanceAccess(companyId) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['entryType', 'category', 'title', 'partyName', 'amountBdt', 'paymentMethod', 'notes', 'memberUids', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(companyId) && isValidId(transactionId) && isCompanyAdminOrOwner(companyId);
+      }
+
+      // Production Orders
+      match /production_orders/{orderId} {
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+        allow get: if isSignedIn() && isValidId(companyId) && isValidId(orderId) && isCompanyMember(companyId);
+
+        allow create: if isSignedIn() &&
+                         isValidId(companyId) &&
+                         isValidId(orderId) &&
+                         incoming().createdBy == request.auth.uid &&
+                         incoming().keys().hasAll(['companyId', 'memberUids', 'batchCode', 'productName', 'productType', 'targetUnits', 'completedUnits', 'assignedKarigors', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['companyId', 'memberUids', 'batchCode', 'productName', 'productType', 'targetUnits', 'completedUnits', 'assignedKarigors', 'status', 'dueLabel', 'createdBy', 'createdAt', 'updatedAt']) &&
+                         isValidProductionOrder(incoming(), companyId) &&
+                         hasProductionAccess(companyId);
+
+        allow update: if isSignedIn() &&
+                         isValidId(companyId) &&
+                         isValidId(orderId) &&
+                         isValidProductionOrder(incoming(), companyId) &&
+                         incoming().companyId == existing().companyId &&
+                         incoming().createdBy == existing().createdBy &&
+                         incoming().createdAt == existing().createdAt &&
+                         hasProductionAccess(companyId) &&
+                         // Terminal State Locking: COMPLETED orders locked unless Owner/Admin overrides
+                         (existing().status != 'COMPLETED' || isCompanyAdminOrOwner(companyId)) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['productName', 'targetUnits', 'completedUnits', 'assignedKarigors', 'status', 'dueLabel', 'memberUids', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(companyId) && isValidId(orderId) && isCompanyAdminOrOwner(companyId);
+      }
+
+      // Tenant Notifications
+      match /notifications/{notificationId} {
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+        allow get: if isSignedIn() && isValidId(companyId) && isValidId(notificationId) && isCompanyMember(companyId);
+
+        allow create: if isSignedIn() &&
+                         isValidId(companyId) &&
+                         isValidId(notificationId) &&
+                         incoming().createdBy == request.auth.uid &&
+                         incoming().keys().hasAll(['companyId', 'memberUids', 'title', 'message', 'category', 'readFlag', 'createdBy', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['companyId', 'memberUids', 'title', 'message', 'category', 'readFlag', 'createdBy', 'createdAt', 'updatedAt']) &&
+                         isValidNotification(incoming(), companyId) &&
+                         (
+                           isCompanyMember(companyId) ||
+                           getAfter(/databases/$(database)/documents/companies/$(companyId)).data.ownerId == request.auth.uid
+                         );
+
+        allow update: if isSignedIn() &&
+                         isValidId(companyId) &&
+                         isValidId(notificationId) &&
+                         isValidNotification(incoming(), companyId) &&
+                         incoming().companyId == existing().companyId &&
+                         incoming().createdBy == existing().createdBy &&
+                         incoming().createdAt == existing().createdAt &&
+                         isCompanyMember(companyId) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['readFlag', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(companyId) && isValidId(notificationId) && isCompanyAdminOrOwner(companyId);
+      }
+
+      // Immutable Audit Logs
+      match /audit_logs/{logId} {
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+        allow get: if isSignedIn() && isValidId(companyId) && isValidId(logId) && isCompanyMember(companyId);
+
+        allow create: if isSignedIn() &&
+                         isValidId(companyId) &&
+                         isValidId(logId) &&
+                         incoming().createdBy == request.auth.uid &&
+                         incoming().actorUid == request.auth.uid &&
+                         incoming().keys().hasAll(['companyId', 'memberUids', 'actorUid', 'actorName', 'action', 'details', 'createdBy', 'createdAt']) &&
+                         incoming().keys().hasOnly(['companyId', 'memberUids', 'actorUid', 'actorName', 'action', 'details', 'createdBy', 'createdAt']) &&
+                         isValidAuditLog(incoming(), companyId) &&
+                         (
+                           isCompanyMember(companyId) ||
+                           getAfter(/databases/$(database)/documents/companies/$(companyId)).data.ownerId == request.auth.uid
+                         );
+
+        // Audit logs are strictly immutable
+        allow update, delete: if false;
+      }
+
+      // Subscription Payment Requests (Server-side verification prep)
+      match /payment_requests/{requestId} {
+        allow list: if isSignedIn() && request.auth.uid in resource.data.memberUids;
+        allow get: if isSignedIn() && isValidId(companyId) && isValidId(requestId) && isCompanyAdminOrOwner(companyId);
+
+        allow create: if isSignedIn() &&
+                         isValidId(companyId) &&
+                         isValidId(requestId) &&
+                         incoming().createdBy == request.auth.uid &&
+                         incoming().keys().hasAll(['companyId', 'memberUids', 'plan', 'amountBdt', 'paymentNumber', 'senderAccount', 'transactionRef', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['companyId', 'memberUids', 'plan', 'amountBdt', 'paymentNumber', 'senderAccount', 'transactionRef', 'status', 'createdBy', 'createdAt', 'updatedAt']) &&
+                         isValidPaymentRequest(incoming(), companyId) &&
+                         isCompanyAdminOrOwner(companyId);
+
+        // Clients cannot self-approve payment requests
+        allow update, delete: if false;
+      }
+    }
+  }
+}

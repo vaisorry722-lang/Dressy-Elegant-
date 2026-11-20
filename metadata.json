@@ -1,0 +1,6 @@
+{
+  "name": "Dressy Elegant",
+  "description": "Multi-tenant Garments Factory Management & Accounting ERP platform for Bangladesh businesses (BDT ৳) with role-based access, PIN security lock, and bilingual Bengali/English support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
